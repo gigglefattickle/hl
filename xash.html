@@ -275,6 +275,10 @@
 
 	<textarea id="output" rows="8" style="display: none;"></textarea>
 	<div id="asyncDialog" style="float:left"></div>
+	<div id="saveTools" style="display:none;clear:both;padding:8px 0;">
+		<input type="button" id="saveNow" value="Save Now" onclick="saveGameData()" />
+		<span id="saveStatus" role="status">Autosave enabled</span>
+	</div>
 
 	<a class="glow">
 		<div id=optionsTitle>
@@ -295,7 +299,7 @@
 		</label><select id=selectZip style=display:none></select><br></div>
 		<label><input name=b type=radio id=rLocalZip />Local ZIP file:</label><label id="label_file_select"><input type=file name=c id=iZipFile />Select ZIP file</label><br><br>
 		<hr>
-		Command-line arguments: <input name=d type=text id=iArgs value="-dev 1 -game valve +sensitivity 8 +fps_max 45" /><br><br>
+		Command-line arguments: <input name=d type=text id=iArgs value="-dev 1 -game valve +sensitivity 8 +fps_max 45 +s_mixahead 0.05" /><br><br>
 
 		<input type=button onclick="startXash();return false;" value="Launch Xash3D!" />
 
@@ -517,44 +521,42 @@
 			showElement('loader1', false);
 			showElement('optionsTitle', false);
 			showElement('fSettings', false);
-			setupFS();
-			Module.arguments = document.getElementById('iArgs').value.split(' ');
-			Module.run = run = savedRun;
-			if (radioChecked('Zip')) {
-				const zipper = document.getElementById('selectZip');
-				if (zipMods.length > 1) {
-					var mod_parts = [zipMods[0][3], zipMods[0][4], zipMods[0][2]];
-					for (var i = 0; i < zipMods.length; i++) {
-						if (zipMods[i][0] == zipper.value) {
-							mod_parts = [zipMods[i][3], zipMods[i][4], zipMods[i][2]];
-							break;
+			setupFS(function() {
+				Module.arguments = document.getElementById('iArgs').value.split(' ');
+				Module.run = run = savedRun;
+				if (radioChecked('Zip')) {
+					const zipper = document.getElementById('selectZip');
+					if (zipMods.length > 1) {
+						var mod_parts = [zipMods[0][3], zipMods[0][4], zipMods[0][2]];
+						for (var i = 0; i < zipMods.length; i++) {
+							if (zipMods[i][0] == zipper.value) {
+								mod_parts = [zipMods[i][3], zipMods[i][4], zipMods[i][2]];
+								break;
+							}
 						}
+						fetchZIP(zipper.value, savedRun, mod_parts[0], mod_parts[1], mod_parts[2]);
+					} else {
+						fetchZIP(zipMods[0][0], savedRun, zipMods[0][3]);
 					}
-					fetchZIP(zipper.value, savedRun, mod_parts[0], mod_parts[1], mod_parts[2]);
-				} else {
-					fetchZIP(zipMods[0][0], savedRun, zipMods[0][3]);
+				} else if ((!zipMods.length && !pkgMods.length) || radioChecked('LocalZip')) {
+					var reader = new FileReader();
+					reader.onload = function() {
+						mountZIP(reader.result);
+						Module.print("Loaded zip data");
+						savedRun();
+					};
+					reader.readAsArrayBuffer(document.getElementById('iZipFile').files[0]);
+				} else if (radioChecked('Package')) {
+					var script = document.createElement('script');
+					script.onload = savedRun;
+					document.body.appendChild(script);
+					script.src = pkgMods.length > 1 ? document.getElementById('selectPkg').value : pkgMods[0][0];
 				}
-			} else if ((!zipMods.length && !pkgMods.length) || radioChecked('LocalZip')) {
-				var reader = new FileReader();
-				reader.onload = function() {
-					mountZIP(reader.result);
-					Module.print("Loaded zip data");
-					savedRun();
-				};
-				reader.readAsArrayBuffer(document.getElementById('iZipFile').files[0]);
-			} else if (radioChecked('Package')) {
-				var script = document.createElement('script');
-				script.onload = savedRun;
-				document.body.appendChild(script);
-				script.src = pkgMods.length > 1 ? document.getElementById('selectPkg').value : pkgMods[0][0];
-			}
-			//showElement('canvas', true);
-
+			});
 			window.addEventListener("beforeunload", function(e) {
 				var confirmationMessage = 'Leave the game?';
-
-				(e || window.event).returnValue = confirmationMessage; //Gecko + IE
-				return confirmationMessage; //Gecko + Webkit, Safari, Chrome etc.
+				(e || window.event).returnValue = confirmationMessage;
+				return confirmationMessage;
 			});
 		}
 
@@ -638,7 +640,22 @@
 			}
 		}
 
-		function setupFS() {
+		var saveInProgress = false;
+		var saveInterval = null;
+
+		function saveGameData() {
+			if (!mounted || !FS.syncfs || saveInProgress) return;
+			saveInProgress = true;
+			var status = document.getElementById('saveStatus');
+			if (status) status.textContent = 'Saving...';
+			FS.syncfs(false, function(err) {
+				saveInProgress = false;
+				if (status) status.textContent = err ? 'Save failed — keep this page open and retry' : 'Saved successfully';
+				if (err) Module.print('Saving IDBFS failed: ' + err);
+			});
+		}
+
+		function setupFS(done) {
 			FS.mkdir('/rodir');
 			FS.mkdir('/xash');
 			try {
@@ -651,22 +668,30 @@
 
 			if (radioChecked('IndexedDB')) {
 				FS.mount(IDBFS, {}, '/xash');
+				mounted = true;
 				FS.syncfs(true, function(err) {
 					if (err) Module.print('Loading IDBFS: ' + err);
+					FS.chdir('/xash/');
+					showElement('saveTools', true);
+					if (!saveInterval) saveInterval = setInterval(saveGameData, 30000);
+					if (done) done();
 				});
-				mounted = true;
+				return;
 			}
 
 			if (radioChecked('LocalStorage') && mfs) {
 				mfs.mount('/ls', new BrowserFS.FileSystem.LocalStorage());
-				FS.mount(new BrowserFS.EmscriptenFS(), {
-					root: '/ls'
-				}, '/xash');
+				FS.mount(new BrowserFS.EmscriptenFS(), { root: '/ls' }, '/xash');
 				Module.print('LocalStorage mounted');
 			}
-
 			FS.chdir('/xash/');
+			if (done) done();
 		}
+
+		document.addEventListener('visibilitychange', function() {
+			if (document.visibilityState === 'hidden') saveGameData();
+		});
+		window.addEventListener('pagehide', saveGameData);
 
 		function skipRun() {
 			savedRun = run;
