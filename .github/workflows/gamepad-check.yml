@@ -1,0 +1,23 @@
+name: Gamepad bridge checks
+
+on:
+  push:
+    branches:
+      - main
+      - gamepad-support
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check gamepad bridge syntax
+        run: node --check gamepad.js
