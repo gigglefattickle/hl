@@ -271,6 +271,8 @@
 			<a class="glow"><span><label><input type="checkbox" id="resize">Resize canvas</label></span></a>
 			<a class="glow"><span><label><input type="checkbox" id="pointerLock" checked>Lock/hide mouse pointer &nbsp;&nbsp;&nbsp;</label></span></a>
 			<span><input type="button" value="Fullscreen" onclick="Module.requestFullscreen(document.getElementById('pointerLock').checked, document.getElementById('resize').checked)"></span>
+            <span id="gamepadStatus" style="display:inline-block;margin:8px;color:#f0b418">Controller: checking</span>
+            <input type="button" id="gamepadToggle" value="Disable Controller" style="font-size:14px">
 		</span></div>
 
 	<textarea id="output" rows="8" style="display: none;"></textarea>
@@ -741,6 +743,7 @@
 		ga('create', 'UA-68666752-4', 'auto');
 		ga('send', 'pageview');*/
 	</script>
+    <script src="gamepad.js"></script>
 </body>
 
 </html>
